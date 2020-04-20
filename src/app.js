@@ -90,31 +90,25 @@ class App {
           order: [['created_at', 'ASC']],
         });
 
-        if (messages.length) {
-          messages = messages.map(message => {
-            message.from_user = message.sent_user_id === user_id;
-            return message;
-          });
-        }
+        messages = messages.map(message => {
+          message.from_user = message.sent_user_id === user_id;
+          return message;
+        });
 
+        // console.log(messages);
         return messages;
       };
 
-      socket.on('CREATE_CHAT', async data => {
-        let room = `${data.user_id}_${data.friend_id}`;
-
-        if (data.user_id > data.friend_id) {
-          room = `${data.friend_id}_${data.user_id}`;
-        }
-
+      socket.on('CREATE_CHAT', async ({ room, user_id, friend_id }) => {
         this.rooms[room] = true;
         socket.join(room);
 
         const messages = await getMessages({
-          room,
-          user_id: data.user_id,
-          friend_id: data.friend_id,
+          user_id,
+          friend_id,
         });
+
+        console.log(room);
 
         this.io.to(room).emit('LIST_MESSAGES', {
           messages,
@@ -122,30 +116,41 @@ class App {
         });
       });
 
-      socket.on('SENDING_MESSAGE', async data => {
-        let room = `${data.user_id}_${data.friend_id}`;
+      socket.on('CALL_USER', ({ offer, room }) => {
+        console.log('chamou', 'CALL_USER');
+        this.io.to(room).emit('CALL_MADE', {
+          offer,
+          room,
+        });
+      });
 
-        if (data.user_id > data.friend_id) {
-          room = `${data.friend_id}_${data.user_id}`;
+      socket.on('MAKE_ANSWER', ({ room, answer }) => {
+        this.io.to(room).emit('ANSWER_MADE', {
+          room,
+          answer,
+        });
+      });
+
+      socket.on(
+        'SENDING_MESSAGE',
+        async ({ room, user_id, friend_id, message }) => {
+          await Message.create({
+            sent_user_id: user_id,
+            received_user_id: friend_id,
+            message,
+          });
+
+          const messages = await getMessages({
+            user_id,
+            friend_id,
+          });
+
+          this.io.to(room).emit('LIST_MESSAGES', {
+            messages,
+            room,
+          });
         }
-
-        await Message.create({
-          sent_user_id: data.user_id,
-          received_user_id: data.friend_id,
-          message: data.message,
-        });
-
-        const messages = await getMessages({
-          room,
-          user_id: data.user_id,
-          friend_id: data.friend_id,
-        });
-
-        this.io.to(room).emit('LIST_MESSAGES', {
-          messages,
-          room,
-        });
-      });
+      );
     });
   }
 
